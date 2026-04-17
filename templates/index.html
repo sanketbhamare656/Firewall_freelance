@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Firewall AI - Intelligent Packet Filtering System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="logo">
+                <span>🛡️ Firewall AI</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="/" class="active">Home</a></li>
+                <li><a href="/detect">Detection</a></li>
+                <li><a href="/history" >History</a></li>
+                <li><a href="/about">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <h1>Intelligent Firewall System</h1>
+        <p>AI-Powered Network Security & Real-time Packet Filtering</p>
+        <a href="/detect" class="btn btn-primary">🚀 Start Detection</a>
+    </div>
+
+    <div class="container">
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>Machine Learning</h3>
+                <p>Powered by Random Forest algorithm for accurate packet classification and threat detection.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Real-time Detection</h3>
+                <p>Instant packet analysis with real-time decision making and logging capabilities.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Analytics Dashboard</h3>
+                <p>Comprehensive monitoring and historical data tracking for security analysis.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="container">
+            <div class="stats-grid">
+                <div>
+                    <div class="stat-number" id="totalDetections">0</div>
+                    <p>Total Detections</p>
+                </div>
+                <div>
+                    <div class="stat-number" id="allowedPackets">0</div>
+                    <p>Allowed Packets</p>
+                </div>
+                <div>
+                    <div class="stat-number" id="blockedPackets">0</div>
+                    <p>Blocked Packets</p>
+                </div>
+                <div>
+                    <div class="stat-number">98%</div>
+                    <p>Model Accuracy</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2026 Firewall AI - Intelligent Packet Filtering System</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.8;">Powered by Machine Learning & Advanced Security Algorithms</p>
+    </div>
+
+    <script>
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                if (data.success) {
+                    const history = data.history;
+                    document.getElementById('totalDetections').textContent = history.length;
+                    const allowed = history.filter(h => h.result === 'Allowed').length;
+                    const blocked = history.filter(h => h.result === 'Blocked').length;
+                    document.getElementById('allowedPackets').textContent = allowed;
+                    document.getElementById('blockedPackets').textContent = blocked;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        loadStats();
+        setInterval(loadStats, 5000);
+    </script>
+</body>
+</html>

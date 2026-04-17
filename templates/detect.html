@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Packet Detection - NetGuard Firewall</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Loading Animation Styles */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(11, 15, 26, 0.98);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .loading-container {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2.5rem;
+            text-align: center;
+            min-width: 350px;
+            max-width: 450px;
+            animation: slideUp 0.4s ease;
+        }
+        
+        .loading-spinner {
+            width: 70px;
+            height: 70px;
+            border: 4px solid rgba(59, 130, 246, 0.2);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+        
+        .progress-steps {
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .step.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .step.completed {
+            color: var(--success);
+        }
+        
+        .step-icon {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+        
+        .step-text {
+            flex: 1;
+            font-size: 0.85rem;
+        }
+        
+        .step-status {
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+        
+        .loading-percent {
+            margin-top: 1rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .loading-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+        
+        .loading-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Result Styles */
+        .result-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .result-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 2rem;
+            text-align: center;
+            animation: slideUp 0.4s ease;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .result-allowed {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+            border: 2px solid rgba(16, 185, 129, 0.4);
+        }
+        
+        .result-blocked {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+            border: 2px solid rgba(239, 68, 68, 0.4);
+        }
+        
+        .result-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        
+        .result h2 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            font-weight: 800;
+        }
+        
+        .result-allowed h2 { color: var(--success); }
+        .result-blocked h2 { color: var(--danger); }
+        
+        .result-message {
+            font-size: 1rem;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+        
+        .reason-list {
+            margin-top: 1.5rem;
+            text-align: left;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1rem;
+            border-radius: 10px;
+        }
+        
+        .reason-list strong {
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        
+        .reason-list ul {
+            margin: 0.8rem 0 0 1.2rem;
+        }
+        
+        .reason-list li {
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+        
+        .view-history-btn {
+            margin-top: 1.5rem;
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+        
+        .view-history-btn:hover {
+            background: rgba(59, 130, 246, 0.15);
+            transform: translateY(-2px);
+        }
+        
+        .empty-result {
+            text-align: center;
+            color: var(--muted);
+            padding: 3rem;
+        }
+        
+        .empty-result-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .quick-test-buttons {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        
+        .test-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            padding: 6px 12px;
+            margin: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            color: var(--muted);
+            transition: all 0.2s ease;
+        }
+        
+        .test-btn:hover {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        .severity-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+        
+        .severity-high {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        
+        .severity-medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+        }
+        
+        .severity-low {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+        
+        /* Left side form adjustments */
+        .form-card {
+            height: 100%;
+        }
+        
+        .btn-detect {
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="logo">🛡️ NetGuard Firewall</a>
+            <div class="nav-status"><span>ACTIVE</span></div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/detect" >Detection</a></li>
+                <li><a href="/history">History</a></li>
+                <li><a href="/about">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container" style="padding-top: 100px;">
+        <div class="grid">
+            <!-- Left Side: Detection Form -->
+            <div class="card form-card">
+                <h2>🔍 Packet Inspection</h2>
+                
+                <div class="form-group">
+                    <label>🌐 Source IP Address</label>
+                    <input type="number" id="src_ip" placeholder="Enter source IP" value="192">
+                </div>
+                
+                <div class="form-group">
+                    <label>🎯 Destination IP Address</label>
+                    <input type="number" id="dst_ip" placeholder="Enter destination IP" value="10">
+                </div>
+                
+                <div class="form-group">
+                    <label>🔌 Port Number</label>
+                    <input type="number" id="port" placeholder="Enter port" value="80">
+                </div>
+                
+                <div class="form-group">
+                    <label>📡 Protocol</label>
+                    <select id="protocol">
+                        <option value="1">TCP (Transmission Control Protocol)</option>
+                        <option value="2">UDP (User Datagram Protocol)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>📦 Packet Size (bytes)</label>
+                    <input type="number" id="packet_size" placeholder="Enter packet size" value="500">
+                </div>
+                
+                <button class="btn-detect" onclick="detectPacket()">
+                    🚀 Analyze Packet
+                </button>
+                
+                <div class="quick-test-buttons">
+                    <p>⚡ Quick Test Scenarios</p>
+                    <button class="test-btn" onclick="fillTest('allowed')">✅ Normal HTTP (Allow)</button>
+                    <button class="test-btn" onclick="fillTest('https')">🔒 Normal HTTPS (Allow)</button>
+                    <button class="test-btn" onclick="fillTest('blocked')">🚫 Telnet Attack (Block)</button>
+                    <button class="test-btn" onclick="fillTest('rdp')">💻 RDP Attack (Block)</button>
+                    <button class="test-btn" onclick="fillTest('dos')">💣 DoS Attack (Block)</button>
+                    <button class="test-btn" onclick="fillTest('portscan')">🔍 Port Scan (Block)</button>
+                </div>
+            </div>
+            
+            <!-- Right Side: Result Display -->
+            <div class="card" style="display: flex; flex-direction: column;">
+                <h2>📊 Detection Result</h2>
+                <div id="resultArea" style="flex: 1;">
+                    <div class="empty-result">
+                        <div class="empty-result-icon">🔍</div>
+                        <p>Enter packet details and click "Analyze Packet"</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">The analysis result will appear here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2026 Firewall AI - Intelligent Packet Filtering System</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.8;">Powered by Machine Learning & Advanced Security Algorithms</p>
+    </div>
+
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <h3>Analyzing Packet</h3>
+            <div class="progress-steps" id="progressSteps">
+                <div class="step" id="step1">
+                    <div class="step-icon">🔍</div>
+                    <div class="step-text">Extracting packet headers...</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step2">
+                    <div class="step-icon">📋</div>
+                    <div class="step-text">Validating protocol & port...</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step3">
+                    <div class="step-icon">⚠️</div>
+                    <div class="step-text">Checking security rules...</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step4">
+                    <div class="step-icon">🎯</div>
+                    <div class="step-text">Analyzing threat patterns...</div>
+                    <div class="step-status"></div>
+                </div>
+                <div class="step" id="step5">
+                    <div class="step-icon">✅</div>
+                    <div class="step-text">Making final decision...</div>
+                    <div class="step-status"></div>
+                </div>
+            </div>
+            <div class="loading-percent" id="loadingPercent">0%</div>
+            <div class="loading-bar">
+                <div class="loading-bar-fill" id="loadingBarFill"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fillTest(type) {
+            if (type === 'allowed') {
+                document.getElementById('src_ip').value = '192';
+                document.getElementById('dst_ip').value = '10';
+                document.getElementById('port').value = '80';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '500';
+            } else if (type === 'https') {
+                document.getElementById('src_ip').value = '192';
+                document.getElementById('dst_ip').value = '10';
+                document.getElementById('port').value = '443';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '700';
+            } else if (type === 'blocked') {
+                document.getElementById('src_ip').value = '192';
+                document.getElementById('dst_ip').value = '10';
+                document.getElementById('port').value = '23';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '1500';
+            } else if (type === 'rdp') {
+                document.getElementById('src_ip').value = '192';
+                document.getElementById('dst_ip').value = '10';
+                document.getElementById('port').value = '3389';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '1600';
+            } else if (type === 'dos') {
+                document.getElementById('src_ip').value = '172';
+                document.getElementById('dst_ip').value = '10';
+                document.getElementById('port').value = '80';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '5000';
+            } else if (type === 'portscan') {
+                document.getElementById('src_ip').value = '10';
+                document.getElementById('dst_ip').value = '192';
+                document.getElementById('port').value = '22';
+                document.getElementById('protocol').value = '1';
+                document.getElementById('packet_size').value = '800';
+            }
+            detectPacket();
+        }
+        
+        async function detectPacket() {
+            const src_ip = document.getElementById('src_ip').value;
+            const dst_ip = document.getElementById('dst_ip').value;
+            const port = document.getElementById('port').value;
+            const protocol = document.getElementById('protocol').value;
+            const packet_size = document.getElementById('packet_size').value;
+            
+            if (!src_ip || !dst_ip || !port || !packet_size) {
+                alert('⚠️ Please fill all fields');
+                return;
+            }
+            
+            const packetData = {
+                src_ip: parseInt(src_ip),
+                dst_ip: parseInt(dst_ip),
+                port: parseInt(port),
+                protocol: parseInt(protocol),
+                packet_size: parseInt(packet_size)
+            };
+            
+            // Show 8-second loading animation
+            await showLoadingAnimation();
+            
+            try {
+                const response = await fetch('/api/detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(packetData)
+                });
+                
+                const result = await response.json();
+                hideLoading();
+                
+                if (result.success) {
+                    const resultArea = document.getElementById('resultArea');
+                    
+                    // Get severity text
+                    let severityText = '';
+                    let severityClass = '';
+                    if (result.severity === 'high') {
+                        severityText = 'HIGH RISK';
+                        severityClass = 'severity-high';
+                    } else if (result.severity === 'medium') {
+                        severityText = 'MEDIUM RISK';
+                        severityClass = 'severity-medium';
+                    } else {
+                        severityText = 'LOW RISK';
+                        severityClass = 'severity-low';
+                    }
+                    
+                    if (result.result_code === 0) {
+                        resultArea.innerHTML = `
+                            <div class="result-card result-allowed">
+                                <div class="result-icon">✅</div>
+                                <h2>${result.prediction}</h2>
+                                <div class="severity-badge ${severityClass}">${severityText}</div>
+                                <p class="result-message">${result.message}</p>
+                                ${result.reasons && result.reasons.length > 0 ? `
+                                    <div class="reason-list">
+                                        <strong>📋 Analysis Report</strong>
+                                        <ul>
+                                            ${result.reasons.map(r => `<li>✓ ${r}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                <button class="view-history-btn" onclick="window.location.href='/history'">
+                                    📜 View Full History
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        resultArea.innerHTML = `
+                            <div class="result-card result-blocked">
+                                <div class="result-icon">🚫</div>
+                                <h2>${result.prediction}</h2>
+                                <div class="severity-badge ${severityClass}">${severityText}</div>
+                                <p class="result-message">${result.message}</p>
+                                ${result.reasons && result.reasons.length > 0 ? `
+                                    <div class="reason-list">
+                                        <strong>⚠️ Block Reasons</strong>
+                                        <ul>
+                                            ${result.reasons.map(r => `<li>✗ ${r}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                <button class="view-history-btn" onclick="window.location.href='/history'">
+                                    📜 View Full History
+                                </button>
+                            </div>
+                        `;
+                    }
+                } else {
+                    resultArea.innerHTML = `
+                        <div class="result-card" style="border-color: var(--danger);">
+                            <div class="result-icon">❌</div>
+                            <h2 style="color: var(--danger);">Error</h2>
+                            <p>${result.error}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                hideLoading();
+                document.getElementById('resultArea').innerHTML = `
+                    <div class="result-card" style="border-color: var(--danger);">
+                        <div class="result-icon">❌</div>
+                        <h2 style="color: var(--danger);">Connection Error</h2>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function showLoadingAnimation() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = 'flex';
+            
+            const steps = ['step1', 'step2', 'step3', 'step4', 'step5'];
+            
+            for (let i = 0; i < steps.length; i++) {
+                const step = document.getElementById(steps[i]);
+                step.classList.add('active');
+                
+                // Update percentage (20% per step)
+                const percent = Math.round(((i + 1) / steps.length) * 100);
+                document.getElementById('loadingPercent').textContent = percent + '%';
+                document.getElementById('loadingBarFill').style.width = percent + '%';
+                
+                // Update step status
+                const statusDiv = step.querySelector('.step-status');
+                statusDiv.textContent = 'processing...';
+                
+                // Wait 1.6 seconds per step (total 8 seconds)
+                await new Promise(resolve => setTimeout(resolve, 1600));
+                
+                // Mark as completed
+                step.classList.remove('active');
+                step.classList.add('completed');
+                step.querySelector('.step-icon').innerHTML = '✓';
+                statusDiv.textContent = 'done';
+            }
+        }
+        
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = 'none';
+            
+            // Reset steps for next time
+            const steps = ['step1', 'step2', 'step3', 'step4', 'step5'];
+            steps.forEach(stepId => {
+                const step = document.getElementById(stepId);
+                step.classList.remove('active', 'completed');
+                step.querySelector('.step-icon').innerHTML = stepId === 'step1' ? '🔍' : 
+                                                              stepId === 'step2' ? '📋' :
+                                                              stepId === 'step3' ? '⚠️' :
+                                                              stepId === 'step4' ? '🎯' : '✅';
+                step.querySelector('.step-status').textContent = '';
+            });
+            document.getElementById('loadingPercent').textContent = '0%';
+            document.getElementById('loadingBarFill').style.width = '0%';
+        }
+    </script>
+</body>
+</html>

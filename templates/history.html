@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detection History - NetGuard Firewall</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .history-container {
+            padding-top: 100px;
+        }
+        
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.2rem;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 0.3rem;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .filter-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--text);
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .full-history-table {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .severity-high { background: rgba(239, 68, 68, 0.15); color: #f87171; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+        .severity-medium { background: rgba(245, 158, 11, 0.15); color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+        .severity-low { background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+        
+        .reason-tooltip {
+            cursor: help;
+            border-bottom: 1px dashed var(--muted);
+        }
+        
+        .export-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .refresh-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="logo">🛡️ NetGuard Firewall</a>
+            <div class="nav-status"><span>ACTIVE</span></div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/detect">Detection</a></li>
+                <li><a href="/history" class="active">History</a></li>
+                <li><a href="/about">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container history-container">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+                <h2>📜 Detection History Log</h2>
+                <div class="action-buttons">
+                    <button class="refresh-btn" onclick="loadFullHistory()">🔄 Refresh</button>
+                    <button class="export-btn" onclick="exportHistory()">📥 Export CSV</button>
+                    <button class="btn-clear" onclick="clearAllHistory()">🗑️ Clear All</button>
+                </div>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="stats-cards" id="statsCards">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalCount">0</div>
+                    <div class="stat-label">Total Detections</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="allowedCount" style="color: var(--success);">0</div>
+                    <div class="stat-label">Allowed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="blockedCount" style="color: var(--danger);">0</div>
+                    <div class="stat-label">Blocked</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="highSeverityCount" style="color: #f87171;">0</div>
+                    <div class="stat-label">High Severity</div>
+                </div>
+            </div>
+            
+            <!-- Filters -->
+            <div class="filter-bar">
+                <input type="text" id="filterSrc" class="filter-input" placeholder="Filter by Source IP" onkeyup="filterHistory()">
+                <input type="text" id="filterDst" class="filter-input" placeholder="Filter by Destination IP" onkeyup="filterHistory()">
+                <input type="text" id="filterPort" class="filter-input" placeholder="Filter by Port" onkeyup="filterHistory()">
+                <select id="filterResult" class="filter-input" onchange="filterHistory()">
+                    <option value="">All Results</option>
+                    <option value="Allowed">Allowed</option>
+                    <option value="Blocked">Blocked</option>
+                </select>
+                <select id="filterSeverity" class="filter-input" onchange="filterHistory()">
+                    <option value="">All Severity</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            
+            <!-- History Table -->
+            <div class="full-history-table" id="fullHistoryTable">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2026 Firewall AI - Intelligent Packet Filtering System</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem; opacity: 0.8;">Powered by Machine Learning & Advanced Security Algorithms</p>
+    </div>
+
+
+    <script>
+        let allHistory = [];
+        
+        async function loadFullHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                
+                if (data.success) {
+                    allHistory = data.history;
+                    updateStats();
+                    displayHistory(allHistory);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('fullHistoryTable').innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--danger);">Error loading history</p>';
+            }
+        }
+        
+        function updateStats() {
+            const total = allHistory.length;
+            const allowed = allHistory.filter(h => h.result === 'Allowed').length;
+            const blocked = allHistory.filter(h => h.result === 'Blocked').length;
+            const highSeverity = allHistory.filter(h => h.severity === 'high').length;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('allowedCount').textContent = allowed;
+            document.getElementById('blockedCount').textContent = blocked;
+            document.getElementById('highSeverityCount').textContent = highSeverity;
+        }
+        
+        function displayHistory(history) {
+            if (history.length === 0) {
+                document.getElementById('fullHistoryTable').innerHTML = '<p style="text-align: center; padding: 3rem; color: var(--muted);">📭 No detection records found</p>';
+                return;
+            }
+            
+            let html = '<div style="overflow-x: auto;">';
+            html += '<table style="width: 100%;">';
+            html += '<thead><tr>';
+            html += '<th>ID</th><th>Timestamp</th><th>Source IP</th><th>Dest IP</th><th>Port</th><th>Protocol</th><th>Size</th><th>Result</th><th>Severity</th><th>Reasons</th>';
+            html += '</thead><tbody>';
+            
+            history.forEach(item => {
+                const badgeClass = item.result === 'Allowed' ? 'badge-success' : 'badge-danger';
+                const severityClass = item.severity === 'high' ? 'severity-high' : (item.severity === 'medium' ? 'severity-medium' : 'severity-low');
+                const severityText = item.severity ? item.severity.toUpperCase() : 'LOW';
+                
+                html += `<tr>
+                    <td>${item.id || '-'}</td>
+                    <td style="font-size: 0.75rem;">${item.timestamp}</td>
+                    <td>${item.src_ip}</td>
+                    <td>${item.dst_ip}</td>
+                    <td>${item.port}</td>
+                    <td>${item.protocol}</td>
+                    <td>${item.packet_size}</td>
+                    <td><span class="badge ${badgeClass}">${item.result}</span></td>
+                    <td><span class="${severityClass}">${severityText}</span></td>
+                    <td class="reason-tooltip" title="${item.reasons ? item.reasons.join(', ') : 'No reasons'}">
+                        ${item.reasons ? (item.reasons[0].substring(0, 50) + (item.reasons[0].length > 50 ? '...' : '')) : '-'}
+                    </td>
+                </tr>`;
+            });
+            
+            html += '</tbody> nahil</div>';
+            document.getElementById('fullHistoryTable').innerHTML = html;
+        }
+        
+        function filterHistory() {
+            const srcFilter = document.getElementById('filterSrc').value.toLowerCase();
+            const dstFilter = document.getElementById('filterDst').value.toLowerCase();
+            const portFilter = document.getElementById('filterPort').value;
+            const resultFilter = document.getElementById('filterResult').value;
+            const severityFilter = document.getElementById('filterSeverity').value;
+            
+            let filtered = allHistory.filter(item => {
+                if (srcFilter && !item.src_ip.toString().includes(srcFilter)) return false;
+                if (dstFilter && !item.dst_ip.toString().includes(dstFilter)) return false;
+                if (portFilter && !item.port.toString().includes(portFilter)) return false;
+                if (resultFilter && item.result !== resultFilter) return false;
+                if (severityFilter && item.severity !== severityFilter) return false;
+                return true;
+            });
+            
+            displayHistory(filtered);
+        }
+        
+        function exportHistory() {
+            if (allHistory.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            let csv = 'ID,Timestamp,Source IP,Destination IP,Port,Protocol,Packet Size,Result,Severity,Reasons\n';
+            
+            allHistory.forEach(item => {
+                csv += `${item.id || '-'},${item.timestamp},${item.src_ip},${item.dst_ip},${item.port},${item.protocol},${item.packet_size},${item.result},${item.severity || 'low'},"${item.reasons ? item.reasons.join('; ') : ''}"\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `firewall_history_${new Date().toISOString().slice(0,19)}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        
+        async function clearAllHistory() {
+            if (confirm('⚠️ Are you sure you want to delete ALL detection history? This cannot be undone!')) {
+                await fetch('/api/clear_history', { method: 'POST' });
+                loadFullHistory();
+            }
+        }
+        
+        // Auto-refresh every 10 seconds
+        loadFullHistory();
+        setInterval(loadFullHistory, 10000);
+    </script>
+</body>
+</html>
