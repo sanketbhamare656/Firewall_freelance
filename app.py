@@ -1,4 +1,4 @@
-# app_rule_based.py - Complete working firewall with history page
+# app_rule_based.py - Fixed with correct allow/block logic
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime
 import os
@@ -11,109 +11,123 @@ app = Flask(__name__)
 detection_history = []
 
 # ============================================
-# FIREWALL RULES CONFIGURATION
+# FIXED FIREWALL RULES
 # ============================================
 
 class FirewallRules:
     def __init__(self):
+        # ONLY these ports are BLOCKED (attack ports)
         self.blocked_ports = {
-            23: "Telnet - Unencrypted protocol",
-            3389: "RDP - Remote Desktop vulnerable",
-            445: "SMB - Ransomware attacks",
+            23: "Telnet - Unencrypted, easily hacked",
+            3389: "RDP - Common ransomware entry point",
+            445: "SMB - EternalBlue, WannaCry ransomware",
             135: "RPC - Windows vulnerabilities",
-            139: "NetBIOS - Old protocol",
-            1433: "MSSQL - Database attacks",
+            139: "NetBIOS - Old protocol, security risks",
+            1433: "MSSQL - SQL injection attacks",
             3306: "MySQL - Database attacks",
-            22: "SSH - Brute force attempts",
             25: "SMTP - Email spamming",
-            21: "FTP - Unencrypted file transfer"
+            110: "POP3 - Old protocol",
+            143: "IMAP - Old protocol"
         }
         
+        # ALL these ports are ALLOWED (safe ports)
         self.allowed_ports = {
-            80: "HTTP - Web traffic",
+            80: "HTTP - Web browsing",
             443: "HTTPS - Secure web",
-            53: "DNS - Domain resolution",
+            53: "DNS - Domain name resolution",
+            22: "SSH - Secure remote access",
+            21: "FTP - File transfer",
             67: "DHCP - IP assignment",
             68: "DHCP - IP assignment",
-            123: "NTP - Time sync"
+            123: "NTP - Time synchronization",
+            8080: "HTTP-Alt - Web proxy",
+            3000: "React/Node - Development",
+            5000: "Flask - Python web apps",
+            8000: "Django - Python web apps",
+            27017: "MongoDB - Database",
+            5432: "PostgreSQL - Database",
+            6379: "Redis - Cache server"
         }
         
-        self.max_packet_size = 1500
-        self.min_packet_size = 64
+        # Packet size limits
+        self.max_normal_size = 1500  # Normal MTU
+        self.dos_threshold = 3000     # DoS attack threshold
         
-        self.suspicious_ips = {
-            'private': [10, 172, 192],
-            'blacklisted': [1, 2, 3, 5, 7]
-        }
+        # Suspicious source IPs (only these are truly malicious)
+        self.blacklisted_ips = [1, 2, 3, 4, 5, 6, 7, 8, 9]  # Known malicious sources
         
-        self.valid_protocols = {
-            1: "TCP",
-            2: "UDP",
-            6: "TCP",
-            17: "UDP"
-        }
-        
-        self.attack_patterns = {
-            'dos': {'min_size': 1000, 'max_size': 65535},
-            'port_scan': {'ports': [21, 22, 23, 80, 443, 3389]}
-        }
+        # Protocol validation
+        self.valid_protocols = {1: "TCP", 2: "UDP", 6: "TCP", 17: "UDP"}
 
 firewall = FirewallRules()
 
+# ============================================
+# FIXED PACKET ANALYSIS FUNCTION
+# ============================================
+
 def analyze_packet(src_ip, dst_ip, port, protocol, packet_size):
+    """
+    Analyze packet - FIXED LOGIC
+    Priority: 1. Protocol → 2. Port Blocklist → 3. DoS → 4. Blacklist → 5. Allow
+    """
     reasons = []
     severity = "low"
     
+    # 1. Check protocol validity
     if protocol not in firewall.valid_protocols:
         reasons.append(f"Invalid protocol: {protocol}")
         severity = "high"
         return "BLOCK", reasons, severity
     
-    if packet_size > firewall.max_packet_size:
-        reasons.append(f"Packet too large: {packet_size} bytes (max: {firewall.max_packet_size})")
-        severity = "high"
-        return "BLOCK", reasons, severity
+    protocol_name = firewall.valid_protocols.get(protocol, "Unknown")
     
-    if packet_size < firewall.min_packet_size:
-        reasons.append(f"Packet too small: {packet_size} bytes")
-        severity = "medium"
-    
+    # 2. Check if port is BLOCKED (attack ports)
     if port in firewall.blocked_ports:
-        reasons.append(f"Blocked port {port}: {firewall.blocked_ports[port]}")
+        reasons.append(f"BLOCKED: Port {port} - {firewall.blocked_ports[port]}")
         severity = "high"
         return "BLOCK", reasons, severity
     
-    if src_ip in firewall.suspicious_ips['private']:
-        reasons.append(f"Suspicious source IP: {src_ip}")
+    # 3. Check for DoS attack (very large packets)
+    if packet_size > firewall.dos_threshold:
+        reasons.append(f"BLOCKED: Possible DoS attack - Packet size {packet_size} bytes exceeds {firewall.dos_threshold}")
+        severity = "high"
+        return "BLOCK", reasons, severity
+    
+    # 4. Check blacklisted source IPs
+    if src_ip in firewall.blacklisted_ips:
+        reasons.append(f"BLOCKED: Source IP {src_ip} is blacklisted")
+        severity = "high"
+        return "BLOCK", reasons, severity
+    
+    # 5. Check packet size warning (not block, just warning)
+    if packet_size > firewall.max_normal_size:
+        reasons.append(f"⚠️ Warning: Large packet size {packet_size} bytes (normal max: {firewall.max_normal_size})")
         severity = "medium"
+        # NOT BLOCKING - just warning
     
-    if port in firewall.attack_patterns['port_scan']['ports']:
-        reasons.append(f"Port scanning detected on port {port}")
-        severity = "high"
-        return "BLOCK", reasons, severity
-    
-    if packet_size > firewall.attack_patterns['dos']['min_size']:
-        reasons.append(f"Possible DoS attack: Large packet size {packet_size}")
-        severity = "high"
-        return "BLOCK", reasons, severity
-    
+    # 6. Check if port is ALLOWED
     if port in firewall.allowed_ports:
-        reasons.append(f"Allowed port {port}: {firewall.allowed_ports[port]}")
+        reasons.append(f"ALLOWED: Port {port} - {firewall.allowed_ports[port]}")
         severity = "low"
         return "ALLOW", reasons, severity
     
+    # 7. Check registered ports (1024-49151) - usually safe
     if 1024 <= port <= 49151:
-        reasons.append(f"Registered port {port} - Allowed")
-        severity = "medium"
-        return "ALLOW", reasons, severity
-    elif 49152 <= port <= 65535:
-        reasons.append(f"Dynamic port {port} - Allowed")
+        reasons.append(f"ALLOWED: Registered port {port} - Application specific")
         severity = "low"
         return "ALLOW", reasons, severity
+    
+    # 8. Check dynamic ports (49152-65535) - temporary ports
+    elif 49152 <= port <= 65535:
+        reasons.append(f"ALLOWED: Dynamic/Ephemeral port {port}")
+        severity = "low"
+        return "ALLOW", reasons, severity
+    
+    # 9. Default - ALLOW (changed from BLOCK to ALLOW)
     else:
-        reasons.append(f"Unknown port {port} - Blocked")
-        severity = "high"
-        return "BLOCK", reasons, severity
+        reasons.append(f"ALLOWED: Port {port} - No specific rule, allowing by default")
+        severity = "low"
+        return "ALLOW", reasons, severity
 
 # ============================================
 # FLASK ROUTES
@@ -148,11 +162,18 @@ def detect_packet():
         protocol = int(data.get('protocol'))
         packet_size = int(data.get('packet_size'))
         
+        print(f"\n📦 Analyzing: SRC={src_ip}, DST={dst_ip}, PORT={port}, PROTO={protocol}, SIZE={packet_size}")
+        
+        # Analyze packet
         action, reasons, severity = analyze_packet(src_ip, dst_ip, port, protocol, packet_size)
         
         prediction = action
         is_blocked = (action == "BLOCK")
         
+        print(f"🎯 Result: {prediction}, Severity: {severity}")
+        print(f"📋 Reasons: {reasons}")
+        
+        # Store in history
         history_entry = {
             'id': len(detection_history) + 1,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -181,6 +202,7 @@ def detect_packet():
         })
         
     except Exception as e:
+        print(f"❌ Error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -200,15 +222,35 @@ def clear_history():
     detection_history = []
     return jsonify({'success': True, 'message': 'History cleared'})
 
+@app.route('/api/rules', methods=['GET'])
+def get_rules():
+    return jsonify({
+        'success': True,
+        'rules': {
+            'blocked_ports': list(firewall.blocked_ports.keys()),
+            'allowed_ports': list(firewall.allowed_ports.keys()),
+            'max_normal_size': firewall.max_normal_size,
+            'dos_threshold': firewall.dos_threshold,
+            'blacklisted_ips': firewall.blacklisted_ips
+        }
+    })
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     
-    print("\n" + "="*60)
-    print("🛡️  RULE-BASED FIREWALL SYSTEM")
-    print("="*60)
+    print("\n" + "="*70)
+    print("🛡️  NETGUARD FIREWALL - FIXED VERSION")
+    print("="*70)
     print(f"🌐 Server: http://localhost:{port}")
-    print(f"📋 Detection Page: http://localhost:{port}/detect")
-    print(f"📜 History Page: http://localhost:{port}/history")
-    print("="*60 + "\n")
+    print("\n📋 FIREWALL RULES:")
+    print("-"*50)
+    print(f"🚫 BLOCKED Ports: {list(firewall.blocked_ports.keys())}")
+    print(f"✅ ALLOWED Ports: {list(firewall.allowed_ports.keys())}")
+    print(f"📦 Normal Packet Size: {firewall.max_normal_size} bytes")
+    print(f"💣 DoS Threshold: {firewall.dos_threshold} bytes")
+    print(f"⚠️ Blacklisted IPs: {firewall.blacklisted_ips}")
+    print("="*70)
+    print("\n💡 NOTE: By default, unknown ports are ALLOWED")
+    print("="*70 + "\n")
     
     app.run(debug=True, host='0.0.0.0', port=port)
